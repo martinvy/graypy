@@ -37,6 +37,9 @@ class GELFRabbitHandler(BaseGELFHandler, SocketHandler):
         exchange_type="fanout",
         virtual_host="/",
         routing_key="",
+        connect_timeout=1,
+        read_timeout=None,
+        write_timeout=None,
         **kwargs
     ):
         """Initialize the GELFRabbitHandler
@@ -56,6 +59,15 @@ class GELFRabbitHandler(BaseGELFHandler, SocketHandler):
 
         :param routing_key:
         :type routing_key: str
+
+        :param connect_timeout: Used when creating new connection
+        :type connect_timeout: int | float | None
+
+        :param read_timeout:
+        :type read_timeout: int | float | None
+
+        :param write_timeout:
+        :type write_timeout: int | float | None
         """
         self.url = url
         parsed = urlparse(url)
@@ -72,18 +84,19 @@ class GELFRabbitHandler(BaseGELFHandler, SocketHandler):
             "password": _ifnone(parsed.password, "guest"),
             "virtual_host": self.virtual_host,
             "insist": False,
+            "read_timeout": read_timeout,
+            "write_timeout": write_timeout,
         }
         self.exchange = exchange
         self.exchange_type = exchange_type
         self.routing_key = routing_key
+        self.connect_timeout = connect_timeout
         BaseGELFHandler.__init__(self, **kwargs)
         SocketHandler.__init__(self, host, port)
         self.addFilter(ExcludeFilter("amqp"))
 
     def makeSocket(self, timeout=1):
-        return RabbitSocket(
-            self.cn_args, timeout, self.exchange, self.exchange_type, self.routing_key
-        )
+        return RabbitSocket(self.cn_args, self.connect_timeout or timeout, self.exchange, self.exchange_type, self.routing_key)
 
     def makePickle(self, record):
         message_dict = self._make_gelf_dict(record)
@@ -91,13 +104,12 @@ class GELFRabbitHandler(BaseGELFHandler, SocketHandler):
 
 
 class RabbitSocket(object):
-    def __init__(self, cn_args, timeout, exchange, exchange_type, routing_key):
+    def __init__(self, cn_args, connect_timeout, exchange, exchange_type, routing_key):
         self.cn_args = cn_args
-        self.timeout = timeout
         self.exchange = exchange
         self.exchange_type = exchange_type
         self.routing_key = routing_key
-        self.connection = amqp.Connection(connect_timeout=timeout, **self.cn_args)
+        self.connection = amqp.Connection(connect_timeout=connect_timeout, **self.cn_args)
         self.connection.connect()
         self.channel = self.connection.channel()
         self.channel.exchange_declare(
